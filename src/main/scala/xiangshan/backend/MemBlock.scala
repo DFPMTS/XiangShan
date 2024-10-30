@@ -46,6 +46,7 @@ import xiangshan.backend.datapath.NewPipelineConnect
 import system.SoCParamsKey
 import xiangshan.backend.fu.NewCSR.TriggerUtil
 import xiangshan.ExceptionNO._
+import xiangshan.backend.trace.TraceCoreInterface
 
 trait HasMemBlockParameters extends HasXSParameter {
   // number of memory units
@@ -317,6 +318,10 @@ class MemBlockInlinedImp(outer: MemBlockInlined) extends LazyModuleImp(outer)
     val resetInFrontendBypass = new Bundle{
       val fromFrontend = Input(Bool())
       val toL2Top      = Output(Bool())
+    }
+    val traceCoreInterfaceBypass = new Bundle{
+      val fromBackend = Flipped(new TraceCoreInterface)
+      val toL2Top     = new TraceCoreInterface
     }
   })
 
@@ -1869,6 +1874,7 @@ class MemBlockInlinedImp(outer: MemBlockInlined) extends LazyModuleImp(outer)
     io.reset_backend := DontCare
   }
   io.resetInFrontendBypass.toL2Top := io.resetInFrontendBypass.fromFrontend
+  io.traceCoreInterfaceBypass.toL2Top <> io.traceCoreInterfaceBypass.fromBackend
 
   // top-down info
   dcache.io.debugTopDown.robHeadVaddr := io.debugTopDown.robHeadVaddr
