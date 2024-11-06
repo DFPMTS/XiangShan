@@ -37,6 +37,7 @@ trait ITTageParams extends HasXSParameter with HasBPUParameter {
   val RegionNums = 16
   val RegionBits = VAddrBits - TargetOffsetBits
   val RegionUNums = 3
+  val RegionRNums = 2
   def ctr_null(ctr: UInt, ctrBits: Int = ITTageCtrBits) =
     ctr === 0.U
   def ctr_unconf(ctr: UInt, ctrBits: Int = ITTageCtrBits) =
@@ -84,7 +85,6 @@ class ITTageOffset(implicit p: Parameters) extends ITTageBundle {
 class ITTageResp(implicit p: Parameters) extends ITTageBundle {
   val ctr    = UInt(ITTageCtrBits.W)
   val u      = UInt(2.W)
-  val target = UInt(VAddrBits.W)
   val target_offset = new ITTageOffset()
 }
 
@@ -100,9 +100,7 @@ class ITTageUpdate(implicit p: Parameters) extends ITTageBundle {
   val uValid  = Bool()
   val u       = Bool()
   val reset_u = Bool()
-  // target
-  val target     = UInt(VAddrBits.W)
-  val old_target = UInt(VAddrBits.W)
+  // target offset
   val target_offset = new ITTageOffset()
   val old_target_offset = new ITTageOffset()
 }
@@ -192,13 +190,12 @@ class ITTageTable(
     val valid  = Bool()
     val tag    = UInt(tagLen.W)
     val ctr    = UInt(ITTageCtrBits.W)
-    val target = UInt(VAddrBits.W)
     val useful = Bool()
     val target_offset = new ITTageOffset()
   }
 
   // Why need add instOffsetBits?
-  val ittageEntrySz = 1 + tagLen + ITTageCtrBits + ITTageUsBits + VAddrBits + TargetOffsetBits + log2Ceil(RegionNums) + 1
+  val ittageEntrySz = 1 + tagLen + ITTageCtrBits + ITTageUsBits + TargetOffsetBits + log2Ceil(RegionNums) + 1
 
   // pc is start address of basic block, most 2 branch inst in block
   // def getUnhashedIdx(pc: UInt) = pc >> (instOffsetBits+log2Ceil(TageBanks))
@@ -235,14 +232,7 @@ class ITTageTable(
   io.resp.valid    := (if (tagLen != 0) s1_req_rhit && !s1_read_write_conflict else true.B) && s1_valid // && s1_mask(b)
   io.resp.bits.ctr := table_read_data.ctr
   io.resp.bits.u   := table_read_data.useful
-  io.resp.bits.target := table_read_data.target
   io.resp.bits.target_offset := table_read_data.target_offset
-
-  val target_lower = get_offset(table_read_data.target)
-  val target_lower_diff = target_lower =/= table_read_data.target_offset.offset
-  dontTouch(target_lower)
-  dontTouch(target_lower_diff)
-  XSError(target_lower_diff && io.resp.valid, "ITTAGE table target offset is not equal target lower!\n")
 
   // Use fetchpc to compute hash
   val update_folded_hist = WireInit(0.U.asTypeOf(new AllFoldedHistories(foldedGHistInfos)))
@@ -252,7 +242,6 @@ class ITTageTable(
   update_folded_hist.getHistWithInfo(altTagFhInfo).folded_hist := compute_folded_ghist(io.update.ghist, tagLen - 1)
   dontTouch(update_folded_hist)
   val (update_idx, update_tag) = compute_tag_and_hash(getUnhashedIdx(io.update.pc), update_folded_hist)
-  val update_target            = io.update.target
   val update_wdata             = Wire(new ITTageEntry)
 
   val updateAllBitmask = VecInit.fill(ittageEntrySz)(1.U).asUInt // update all entry
@@ -307,7 +296,6 @@ class ITTageTable(
   update_wdata.tag    := update_tag
   update_wdata.useful := Mux(useful_can_reset, false.B, io.update.u)
   // only when ctr is null
-  update_wdata.target := Mux(io.update.alloc || ctr_null(old_ctr), update_target, io.update.old_target)
   update_wdata.target_offset := Mux(io.update.alloc || ctr_null(old_ctr), io.update.target_offset, io.update.old_target_offset)
 
   XSPerfAccumulate("ittage_table_updates", io.update.valid)
@@ -327,18 +315,18 @@ class ITTageTable(
     XSDebug(
       RegNext(io.req.fire) && s1_req_rhit,
       p"ITTageTableResp: idx=$s1_idx, hit:${s1_req_rhit}, " +
-        p"ctr:${io.resp.bits.ctr}, u:${io.resp.bits.u}, tar:${Hexadecimal(io.resp.bits.target)}\n"
+        p"ctr:${io.resp.bits.ctr}, u:${io.resp.bits.u}, tar:${Hexadecimal(io.resp.bits.target_offset.offset)}\n"
     )
     XSDebug(
       io.update.valid,
       p"update ITTAGE Table: pc:${Hexadecimal(u.pc)}}, " +
         p"correct:${u.correct}, alloc:${u.alloc}, oldCtr:${u.oldCtr}, " +
-        p"target:${Hexadecimal(u.target)}, old_target:${Hexadecimal(u.old_target)}\n"
+        p"target:${Hexadecimal(u.target_offset.offset)}, old_target:${Hexadecimal(u.old_target_offset.offset)}\n"
     )
     XSDebug(
       io.update.valid,
       p"update ITTAGE Table: writing tag:${update_tag}, " +
-        p"ctr: ${update_wdata.ctr}, target:${Hexadecimal(update_wdata.target)}" +
+        p"ctr: ${update_wdata.ctr}, target:${Hexadecimal(update_wdata.target_offset.offset)}" +
         p" in idx $update_idx\n"
     )
     XSDebug(RegNext(io.req.fire) && !s1_req_rhit, "TageTableResp: no hits!\n")
@@ -401,38 +389,30 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   }
   class RegionWay()(implicit p: Parameters) extends XSModule with ITTageParams {
   val io = IO(new Bundle {
-    val req_pointer        = Input(Vec(2, UInt(log2Ceil(RegionNums).W)))
-    val resp_hit     = Output(Vec(2,Bool()))
-    val resp_region       = Output(Vec(2, UInt(RegionBits.W)))
+    val req_pointer        = Input(Vec(RegionRNums, UInt(log2Ceil(RegionNums).W)))
+    val resp_hit     = Output(Vec(RegionRNums, Bool()))
+    val resp_region       = Output(Vec(RegionRNums, UInt(RegionBits.W)))
 
     val update_valid =  Input(Vec(RegionUNums, Bool()))
     val update_region = Input(Vec(RegionUNums, UInt(RegionBits.W)))
-    // val update_hit     = Output(Vec(RegionUNums,Bool()))
     val update_pointer     = Output(Vec(RegionUNums,UInt(log2Ceil(RegionNums).W)))
-    // val write_valid    = Input(Vec(RegionUNums, Bool()))
-    // val write_pointer      = Input(Vec(RegionUNums, UInt(log2Ceil(RegionNums).W)))
-    // val write_data      = Input(Vec(RegionUNums, new RegionEntry))
   })
-  // val region   = Reg(UInt(RegionBits.W))
-  // val region   = RegInit(0.U(RegionBits.W))
 
-  // val valid = RegInit(false.B)
   val regions = RegInit(VecInit(Seq.fill(RegionNums)(0.U.asTypeOf(new RegionEntry()))))
   val replacer            = ReplacementPolicy.fromString("plru", RegionNums)
   val replacer_touch_ways = Wire(Vec(RegionUNums, Valid(UInt(log2Ceil(RegionNums).W))))
   
-  for(i <- 0 until 2){
+  for(i <- 0 until RegionRNums){
     io.resp_hit(i) := regions(io.req_pointer(i)).valid
     io.resp_region(i) := regions(io.req_pointer(i)).region
   }
   val u_valids = VecInit((0 until RegionNums).map( w => regions(w).valid))
   val u_valid = WireInit(u_valids.andR)
-  // write bypass to avoid multiple hit
+
   for(i <- 0 until RegionUNums){
     val u_total_hits = VecInit((0 until RegionNums).map( w => (regions(w).region === io.update_region(i) && regions(w).valid)))
     val u_hit = u_total_hits.reduce(_||_)
     val u_pointer = Mux(u_hit, OHToUInt(u_total_hits), Mux(!u_valid, PriorityEncoder(~u_valids), replacer.way))
-    // io.update_hit(i) := u_hit
     io.update_pointer(i) := u_pointer
     when(!u_hit && io.update_valid(i)) {
       when(!regions(u_pointer).valid) {
@@ -447,7 +427,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
 }
 
   val rTable = Module(new RegionWay)
-  // val rTable = RegInit(VecInit(Seq.fill(RegionNums)(0.U.asTypeOf(new RegionEntry()))))
 
   // uftb miss or hasIndirect
   val s1_uftbHit         = io.in.bits.resp_in(0).s1_uftbHit
@@ -503,16 +482,12 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   val updateUMask     = WireInit(0.U.asTypeOf(Vec(ITTageNTables, Bool())))
   val updateResetU    = WireInit(false.B)
   val updateCorrect   = Wire(Vec(ITTageNTables, Bool()))
-  val updateTarget    = Wire(Vec(ITTageNTables, UInt(VAddrBits.W)))
-  val updateOldTarget = Wire(Vec(ITTageNTables, UInt(VAddrBits.W)))
   val updateAlloc     = Wire(Vec(ITTageNTables, Bool()))
   val updateOldCtr    = Wire(Vec(ITTageNTables, UInt(ITTageCtrBits.W)))
   val updateU         = Wire(Vec(ITTageNTables, Bool()))
   val updateTargetOffset    = Wire(Vec(ITTageNTables, new ITTageOffset))
   val updateOldTargetOffset = Wire(Vec(ITTageNTables, new ITTageOffset))
   updateCorrect   := DontCare
-  updateTarget    := DontCare
-  updateOldTarget := DontCare
   updateAlloc     := DontCare
   updateOldCtr    := DontCare
   updateU         := DontCare
@@ -538,7 +513,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
       val tableInfo = Wire(new ITTageTableInfo)
       tableInfo.u        := r.bits.u
       tableInfo.ctr      := r.bits.ctr
-      tableInfo.target   := r.bits.target
       tableInfo.target_offset   := r.bits.target_offset
       tableInfo.tableIdx := i.U(log2Ceil(ITTageNTables).W)
       SelectTwoInterRes(r.valid, tableInfo)
@@ -555,20 +529,17 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
 
   val baseTarget = io.in.bits.resp_in(0).s2.full_pred(3).jalr_target // use ftb pred as base target
 
-  s2_tageTarget := Mux1H(Seq(
-    (provided && !(providerNull && altProvided), providerInfo.target),
-    (altProvided && providerNull, altProviderInfo.target),
-    (!provided, baseTarget)
-  ))
-
   rTable.io.req_pointer(0) := providerInfo.target_offset.pointer
   rTable.io.req_pointer(1) := altProviderInfo.target_offset.pointer
-  val providerCatTarget = Mux(providerInfo.target_offset.usePCRegion || !rTable.io.resp_hit(0), Cat(get_region(s2_pc_dup(0).getAddr()), providerInfo.target_offset.offset), Cat(rTable.io.resp_region(0), providerInfo.target_offset.offset))
-  val altproviderCatTarget = Mux(altProviderInfo.target_offset.usePCRegion || !rTable.io.resp_hit(1), Cat(get_region(s2_pc_dup(0).getAddr()), altProviderInfo.target_offset.offset), Cat(rTable.io.resp_region(1), altProviderInfo.target_offset.offset))
-	
-	dontTouch(providerCatTarget)
-	dontTouch(altproviderCatTarget)
+  val providerCatTarget = Mux(providerInfo.target_offset.usePCRegion || !rTable.io.resp_hit(0), Cat(get_region(s1_pc_dup(0)), providerInfo.target_offset.offset), Cat(rTable.io.resp_region(0), providerInfo.target_offset.offset))
+  val altproviderCatTarget = Mux(altProviderInfo.target_offset.usePCRegion || !rTable.io.resp_hit(1), Cat(get_region(s1_pc_dup(0)), altProviderInfo.target_offset.offset), Cat(rTable.io.resp_region(1), altProviderInfo.target_offset.offset))
 
+
+  s2_tageTarget := Mux1H(Seq(
+    (provided && !(providerNull && altProvided), providerCatTarget),
+    (altProvided && providerNull, altproviderCatTarget),
+    (!provided, baseTarget)
+  ))
   s2_provided          := provided
   s2_provider          := providerInfo.tableIdx
   s2_altProvided       := altProvided
@@ -576,18 +547,11 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   s2_providerU         := providerInfo.u
   s2_providerCtr       := providerInfo.ctr
   s2_altProviderCtr    := altProviderInfo.ctr
-  s2_providerTarget    := providerInfo.target
-  s2_altProviderTarget := altProviderInfo.target
+  s2_providerTarget    := providerCatTarget
+  s2_altProviderTarget := altproviderCatTarget
 
-  val resps_valid = s2_resps.map(w => w.valid).orR
-
-  // XSError((get_offset(providerInfo.target) =/= providerInfo.target_offset.offset) && provided, "ITTAGE providerInfo's target offset is not equal target lower!\n")
-  // XSError((get_offset(altProviderInfo.target) =/= altProviderInfo.target_offset.offset) && altProvided, "ITTAGE altProvider's target offset is not equal target lower!\n")
-
-  XSPerfAccumulate("providerCatTarget_diff_providerTarget", (providerCatTarget =/= s2_providerTarget) && provided)
-  XSPerfAccumulate("altproviderCatTarget_diff_altProviderTarget", (altproviderCatTarget =/= s2_altProviderTarget) && altProvided)
-  XSPerfAccumulate("providerCatTarget_diff_providerTarget_valids", (providerCatTarget =/= s2_providerTarget) && resps_valid)
-  XSPerfAccumulate("altproviderCatTarget_diff_altProviderTarget_valids", (altproviderCatTarget =/= s2_altProviderTarget) && resps_valid)
+  XSPerfAccumulate("provider_region_miss", !providerInfo.target_offset.usePCRegion && !rTable.io.resp_hit(0))
+  XSPerfAccumulate("altprovider_region_miss", !altProviderInfo.target_offset.usePCRegion && !rTable.io.resp_hit(1))
 
   XSDebug(io.s2_fire(3), p"hit_taken_jalr:")
 
@@ -673,8 +637,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
         updateCorrect(altProvider)   := false.B
         updateOldCtr(altProvider)    := updateMeta.altProviderCtr
         updateAlloc(altProvider)     := false.B
-        updateTarget(altProvider)    := updateRealTarget
-        updateOldTarget(altProvider) := updateMeta.altProviderTarget
         updateTargetOffset(altProvider) := updateRealTargetOffset
         updateOldTargetOffset(altProvider) := metaAltProviderTargetOffset
       }
@@ -688,8 +650,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
         updateMeta.providerTarget === updateRealTarget
       )
       updateCorrect(provider)   := updateMeta.providerTarget === updateRealTarget
-      updateTarget(provider)    := updateRealTarget
-      updateOldTarget(provider) := updateMeta.providerTarget
       updateOldCtr(provider)    := updateMeta.providerCtr
       updateAlloc(provider)     := false.B
       updateTargetOffset(provider) := updateRealTargetOffset
@@ -708,7 +668,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
       XSDebug(true.B, p"allocate new table entry, pred cycle ${updateMeta.pred_cycle.getOrElse(0.U)}\n")
       updateMask(allocate.bits)    := true.B
       updateCorrect(allocate.bits) := true.B // useless for alloc
-      updateTarget(allocate.bits)  := updateRealTarget
       updateAlloc(allocate.bits)   := true.B
       updateUMask(allocate.bits)   := true.B
       updateU(allocate.bits)       := false.B
@@ -725,8 +684,6 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
     tables(i).io.update.valid      := RegNext(updateMask(i), init = false.B)
     tables(i).io.update.reset_u    := RegNext(updateResetU, init = false.B)
     tables(i).io.update.correct    := RegEnable(updateCorrect(i), updateMask(i))
-    tables(i).io.update.target     := RegEnable(updateTarget(i), updateMask(i))
-    tables(i).io.update.old_target := RegEnable(updateOldTarget(i), updateMask(i))
     tables(i).io.update.alloc      := RegEnable(updateAlloc(i), updateMask(i))
     tables(i).io.update.oldCtr     := RegEnable(updateOldCtr(i), updateMask(i))
     tables(i).io.update.target_offset := RegEnable(updateTargetOffset(i), updateMask(i))
@@ -813,7 +770,7 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
         VecInit(s2_resps_regs(i).valid).asUInt,
         s2_resps_regs(i).bits.ctr,
         s2_resps_regs(i).bits.u,
-        s2_resps_regs(i).bits.target
+        s2_resps_regs(i).bits.target_offset.offset
       )
     }
   }
