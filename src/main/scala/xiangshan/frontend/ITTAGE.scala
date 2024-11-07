@@ -18,26 +18,26 @@ package xiangshan.frontend
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.util.SeqBoolBitwiseOps
 import org.chipsalliance.cde.config.Parameters
 import scala.{Tuple2 => &}
 import scala.math.min
 import utility._
 import xiangshan._
-import freechips.rocketchip.util.SeqBoolBitwiseOps
 
 trait ITTageParams extends HasXSParameter with HasBPUParameter {
 
-  val ITTageNTables = ITTageTableInfos.size // Number of tage tables
-  val UBitPeriod    = 2048
-  val ITTageCtrBits = 2
-  val uFoldedWidth  = 16
-  val TickWidth     = 8
-  val ITTageUsBits  = 1
+  val ITTageNTables    = ITTageTableInfos.size // Number of tage tables
+  val UBitPeriod       = 2048
+  val ITTageCtrBits    = 2
+  val uFoldedWidth     = 16
+  val TickWidth        = 8
+  val ITTageUsBits     = 1
   val TargetOffsetBits = 20
-  val RegionNums = 16
-  val RegionBits = VAddrBits - TargetOffsetBits
-  val RegionUNums = 3
-  val RegionRNums = 2
+  val RegionNums       = 16
+  val RegionBits       = VAddrBits - TargetOffsetBits
+  val RegionUNums      = 3
+  val RegionRNums      = 2
   def ctr_null(ctr: UInt, ctrBits: Int = ITTageCtrBits) =
     ctr === 0.U
   def ctr_unconf(ctr: UInt, ctrBits: Int = ITTageCtrBits) =
@@ -77,14 +77,14 @@ class ITTageReq(implicit p: Parameters) extends ITTageBundle {
 }
 
 class ITTageOffset(implicit p: Parameters) extends ITTageBundle {
-  val offset          = UInt(TargetOffsetBits.W)
-  val pointer = UInt(log2Ceil(RegionNums).W)
+  val offset      = UInt(TargetOffsetBits.W)
+  val pointer     = UInt(log2Ceil(RegionNums).W)
   val usePCRegion = Bool()
 }
 
 class ITTageResp(implicit p: Parameters) extends ITTageBundle {
-  val ctr    = UInt(ITTageCtrBits.W)
-  val u      = UInt(2.W)
+  val ctr           = UInt(ITTageCtrBits.W)
+  val u             = UInt(2.W)
   val target_offset = new ITTageOffset()
 }
 
@@ -101,7 +101,7 @@ class ITTageUpdate(implicit p: Parameters) extends ITTageBundle {
   val u       = Bool()
   val reset_u = Bool()
   // target offset
-  val target_offset = new ITTageOffset()
+  val target_offset     = new ITTageOffset()
   val old_target_offset = new ITTageOffset()
 }
 
@@ -187,10 +187,10 @@ class ITTageTable(
   def inc_ctr(ctr: UInt, taken: Bool): UInt = satUpdate(ctr, ITTageCtrBits, taken)
 
   class ITTageEntry() extends ITTageBundle {
-    val valid  = Bool()
-    val tag    = UInt(tagLen.W)
-    val ctr    = UInt(ITTageCtrBits.W)
-    val useful = Bool()
+    val valid         = Bool()
+    val tag           = UInt(tagLen.W)
+    val ctr           = UInt(ITTageCtrBits.W)
+    val useful        = Bool()
     val target_offset = new ITTageOffset()
   }
 
@@ -296,7 +296,11 @@ class ITTageTable(
   update_wdata.tag    := update_tag
   update_wdata.useful := Mux(useful_can_reset, false.B, io.update.u)
   // only when ctr is null
-  update_wdata.target_offset := Mux(io.update.alloc || ctr_null(old_ctr), io.update.target_offset, io.update.old_target_offset)
+  update_wdata.target_offset := Mux(
+    io.update.alloc || ctr_null(old_ctr),
+    io.update.target_offset,
+    io.update.old_target_offset
+  )
 
   XSPerfAccumulate("ittage_table_updates", io.update.valid)
   XSPerfAccumulate("ittage_table_hits", io.resp.valid)
@@ -384,47 +388,48 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   val tickCtr    = RegInit(0.U(TickWidth.W))
 
   class RegionEntry() extends ITTageBundle {
-    val valid = Bool()
+    val valid  = Bool()
     val region = UInt(RegionBits.W)
   }
   class RegionWay()(implicit p: Parameters) extends XSModule with ITTageParams {
-  val io = IO(new Bundle {
-    val req_pointer        = Input(Vec(RegionRNums, UInt(log2Ceil(RegionNums).W)))
-    val resp_hit     = Output(Vec(RegionRNums, Bool()))
-    val resp_region       = Output(Vec(RegionRNums, UInt(RegionBits.W)))
+    val io = IO(new Bundle {
+      val req_pointer = Input(Vec(RegionRNums, UInt(log2Ceil(RegionNums).W)))
+      val resp_hit    = Output(Vec(RegionRNums, Bool()))
+      val resp_region = Output(Vec(RegionRNums, UInt(RegionBits.W)))
 
-    val update_valid =  Input(Vec(RegionUNums, Bool()))
-    val update_region = Input(Vec(RegionUNums, UInt(RegionBits.W)))
-    val update_pointer     = Output(Vec(RegionUNums,UInt(log2Ceil(RegionNums).W)))
-  })
+      val update_valid   = Input(Vec(RegionUNums, Bool()))
+      val update_region  = Input(Vec(RegionUNums, UInt(RegionBits.W)))
+      val update_pointer = Output(Vec(RegionUNums, UInt(log2Ceil(RegionNums).W)))
+    })
 
-  val regions = RegInit(VecInit(Seq.fill(RegionNums)(0.U.asTypeOf(new RegionEntry()))))
-  val replacer            = ReplacementPolicy.fromString("plru", RegionNums)
-  val replacer_touch_ways = Wire(Vec(RegionUNums, Valid(UInt(log2Ceil(RegionNums).W))))
-  
-  for(i <- 0 until RegionRNums){
-    io.resp_hit(i) := regions(io.req_pointer(i)).valid
-    io.resp_region(i) := regions(io.req_pointer(i)).region
-  }
-  val u_valids = VecInit((0 until RegionNums).map( w => regions(w).valid))
-  val u_valid = WireInit(u_valids.andR)
+    val regions             = RegInit(VecInit(Seq.fill(RegionNums)(0.U.asTypeOf(new RegionEntry()))))
+    val replacer            = ReplacementPolicy.fromString("plru", RegionNums)
+    val replacer_touch_ways = Wire(Vec(RegionUNums, Valid(UInt(log2Ceil(RegionNums).W))))
 
-  for(i <- 0 until RegionUNums){
-    val u_total_hits = VecInit((0 until RegionNums).map( w => (regions(w).region === io.update_region(i) && regions(w).valid)))
-    val u_hit = u_total_hits.reduce(_||_)
-    val u_pointer = Mux(u_hit, OHToUInt(u_total_hits), Mux(!u_valid, PriorityEncoder(~u_valids), replacer.way))
-    io.update_pointer(i) := u_pointer
-    when(!u_hit && io.update_valid(i)) {
-      when(!regions(u_pointer).valid) {
-        regions(u_pointer).valid := true.B
-      }
-      regions(u_pointer).region  := io.update_region(i)
+    for (i <- 0 until RegionRNums) {
+      io.resp_hit(i)    := regions(io.req_pointer(i)).valid
+      io.resp_region(i) := regions(io.req_pointer(i)).region
     }
-    replacer_touch_ways(i).valid :=  io.update_valid(i)
-    replacer_touch_ways(i).bits :=  u_pointer
+    val u_valids = VecInit((0 until RegionNums).map(w => regions(w).valid))
+    val u_valid  = WireInit(u_valids.andR)
+
+    for (i <- 0 until RegionUNums) {
+      val u_total_hits =
+        VecInit((0 until RegionNums).map(w => regions(w).region === io.update_region(i) && regions(w).valid))
+      val u_hit     = u_total_hits.reduce(_ || _)
+      val u_pointer = Mux(u_hit, OHToUInt(u_total_hits), Mux(!u_valid, PriorityEncoder(~u_valids), replacer.way))
+      io.update_pointer(i) := u_pointer
+      when(!u_hit && io.update_valid(i)) {
+        when(!regions(u_pointer).valid) {
+          regions(u_pointer).valid := true.B
+        }
+        regions(u_pointer).region := io.update_region(i)
+      }
+      replacer_touch_ways(i).valid := io.update_valid(i)
+      replacer_touch_ways(i).bits  := u_pointer
+    }
+    replacer.access(replacer_touch_ways)
   }
-  replacer.access(replacer_touch_ways)
-}
 
   val rTable = Module(new RegionWay)
 
@@ -478,21 +483,21 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   // meta is splited by composer
   val updateMeta = update.meta.asTypeOf(new ITTageMeta)
 
-  val updateMask      = WireInit(0.U.asTypeOf(Vec(ITTageNTables, Bool())))
-  val updateUMask     = WireInit(0.U.asTypeOf(Vec(ITTageNTables, Bool())))
-  val updateResetU    = WireInit(false.B)
-  val updateCorrect   = Wire(Vec(ITTageNTables, Bool()))
-  val updateAlloc     = Wire(Vec(ITTageNTables, Bool()))
-  val updateOldCtr    = Wire(Vec(ITTageNTables, UInt(ITTageCtrBits.W)))
-  val updateU         = Wire(Vec(ITTageNTables, Bool()))
+  val updateMask            = WireInit(0.U.asTypeOf(Vec(ITTageNTables, Bool())))
+  val updateUMask           = WireInit(0.U.asTypeOf(Vec(ITTageNTables, Bool())))
+  val updateResetU          = WireInit(false.B)
+  val updateCorrect         = Wire(Vec(ITTageNTables, Bool()))
+  val updateAlloc           = Wire(Vec(ITTageNTables, Bool()))
+  val updateOldCtr          = Wire(Vec(ITTageNTables, UInt(ITTageCtrBits.W)))
+  val updateU               = Wire(Vec(ITTageNTables, Bool()))
   val updateTargetOffset    = Wire(Vec(ITTageNTables, new ITTageOffset))
   val updateOldTargetOffset = Wire(Vec(ITTageNTables, new ITTageOffset))
-  updateCorrect   := DontCare
-  updateAlloc     := DontCare
-  updateOldCtr    := DontCare
-  updateU         := DontCare
-  updateTargetOffset         := DontCare
-  updateOldTargetOffset         := DontCare
+  updateCorrect         := DontCare
+  updateAlloc           := DontCare
+  updateOldCtr          := DontCare
+  updateU               := DontCare
+  updateTargetOffset    := DontCare
+  updateOldTargetOffset := DontCare
 
   // val updateTageMisPreds = VecInit((0 until numBr).map(i => updateMetas(i).taken =/= u.takens(i)))
   val updateMisPred = update.mispred_mask(numBr) // the last one indicates jmp results
@@ -511,10 +516,10 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   val inputRes = VecInit(s2_resps.zipWithIndex.map {
     case (r, i) => {
       val tableInfo = Wire(new ITTageTableInfo)
-      tableInfo.u        := r.bits.u
-      tableInfo.ctr      := r.bits.ctr
-      tableInfo.target_offset   := r.bits.target_offset
-      tableInfo.tableIdx := i.U(log2Ceil(ITTageNTables).W)
+      tableInfo.u             := r.bits.u
+      tableInfo.ctr           := r.bits.ctr
+      tableInfo.target_offset := r.bits.target_offset
+      tableInfo.tableIdx      := i.U(log2Ceil(ITTageNTables).W)
       SelectTwoInterRes(r.valid, tableInfo)
     }
   })
@@ -531,9 +536,16 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
 
   rTable.io.req_pointer(0) := providerInfo.target_offset.pointer
   rTable.io.req_pointer(1) := altProviderInfo.target_offset.pointer
-  val providerCatTarget = Mux(providerInfo.target_offset.usePCRegion || !rTable.io.resp_hit(0), Cat(get_region(s1_pc_dup(0)), providerInfo.target_offset.offset), Cat(rTable.io.resp_region(0), providerInfo.target_offset.offset))
-  val altproviderCatTarget = Mux(altProviderInfo.target_offset.usePCRegion || !rTable.io.resp_hit(1), Cat(get_region(s1_pc_dup(0)), altProviderInfo.target_offset.offset), Cat(rTable.io.resp_region(1), altProviderInfo.target_offset.offset))
-
+  val providerCatTarget = Mux(
+    providerInfo.target_offset.usePCRegion || !rTable.io.resp_hit(0),
+    Cat(get_region(s1_pc_dup(0)), providerInfo.target_offset.offset),
+    Cat(rTable.io.resp_region(0), providerInfo.target_offset.offset)
+  )
+  val altproviderCatTarget = Mux(
+    altProviderInfo.target_offset.usePCRegion || !rTable.io.resp_hit(1),
+    Cat(get_region(s1_pc_dup(0)), altProviderInfo.target_offset.offset),
+    Cat(rTable.io.resp_region(1), altProviderInfo.target_offset.offset)
+  )
 
   s2_tageTarget := Mux1H(Seq(
     (provided && !(providerNull && altProvided), providerCatTarget),
@@ -585,36 +597,36 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   resp_meta.allocate.bits  := RegEnable(s2_allocEntry, io.s2_fire(3))
 
   // Update in loop
-  val updateRealTarget = update.full_target
-  val PCRegion = get_region(update.pc)
+  val updateRealTarget       = update.full_target
+  val PCRegion               = get_region(update.pc)
   val updateRealTargetRegion = get_region(updateRealTarget)
   val updateRealTargetOffset = WireInit(0.U.asTypeOf(new ITTageOffset))
   updateRealTargetOffset.offset := get_offset(updateRealTarget)
   val updateRealUsePCRegion = updateRealTargetRegion === PCRegion
   updateRealTargetOffset.usePCRegion := updateRealUsePCRegion
-  rTable.io.update_valid(0) := !updateRealUsePCRegion && updateMask.reduce(_||_)
-  rTable.io.update_region(0) := updateRealTargetRegion
-  updateRealTargetOffset.pointer := rTable.io.update_pointer(0)
+  rTable.io.update_valid(0)          := !updateRealUsePCRegion && updateMask.reduce(_ || _)
+  rTable.io.update_region(0)         := updateRealTargetRegion
+  updateRealTargetOffset.pointer     := rTable.io.update_pointer(0)
 
   val metaAltProviderTargetRegion = get_region(updateMeta.altProviderTarget)
   val metaAltProviderTargetOffset = WireInit(0.U.asTypeOf(new ITTageOffset))
-  val metaAltProviderUsePCRegion = WireInit(false.B)
-  val metaProviderTargetRegion = get_region(updateMeta.providerTarget)
-  val metaProviderTargetOffset = WireInit(0.U.asTypeOf(new ITTageOffset))
-  val metaProviderUsePCRegion = WireInit(false.B)
+  val metaAltProviderUsePCRegion  = WireInit(false.B)
+  val metaProviderTargetRegion    = get_region(updateMeta.providerTarget)
+  val metaProviderTargetOffset    = WireInit(0.U.asTypeOf(new ITTageOffset))
+  val metaProviderUsePCRegion     = WireInit(false.B)
 
-  metaAltProviderUsePCRegion := metaAltProviderTargetRegion === PCRegion
-  metaAltProviderTargetOffset.offset := get_offset(updateMeta.altProviderTarget)
-  rTable.io.update_valid(1) := !metaAltProviderUsePCRegion && updateMask(updateMeta.altProvider.bits)
-  rTable.io.update_region(1) := metaAltProviderTargetRegion
-  metaAltProviderTargetOffset.pointer := rTable.io.update_pointer(1)
+  metaAltProviderUsePCRegion              := metaAltProviderTargetRegion === PCRegion
+  metaAltProviderTargetOffset.offset      := get_offset(updateMeta.altProviderTarget)
+  rTable.io.update_valid(1)               := !metaAltProviderUsePCRegion && updateMask(updateMeta.altProvider.bits)
+  rTable.io.update_region(1)              := metaAltProviderTargetRegion
+  metaAltProviderTargetOffset.pointer     := rTable.io.update_pointer(1)
   metaAltProviderTargetOffset.usePCRegion := metaAltProviderUsePCRegion
 
-  metaProviderUsePCRegion := metaProviderTargetRegion === PCRegion
-  metaProviderTargetOffset.offset := get_offset(updateMeta.providerTarget)
-  rTable.io.update_valid(2) := !metaProviderUsePCRegion && updateMask(updateMeta.provider.bits)
-  rTable.io.update_region(2) := metaAltProviderTargetRegion
-  metaProviderTargetOffset.pointer := rTable.io.update_pointer(2)
+  metaProviderUsePCRegion              := metaProviderTargetRegion === PCRegion
+  metaProviderTargetOffset.offset      := get_offset(updateMeta.providerTarget)
+  rTable.io.update_valid(2)            := !metaProviderUsePCRegion && updateMask(updateMeta.provider.bits)
+  rTable.io.update_region(2)           := metaAltProviderTargetRegion
+  metaProviderTargetOffset.pointer     := rTable.io.update_pointer(2)
   metaProviderTargetOffset.usePCRegion := metaProviderUsePCRegion
 
   // Seq(updateRealTargetOffset, metaAltProviderTargetOffset, metaProviderTargetOffset).zipWithIndex.map{
@@ -632,12 +644,12 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
       when(usedAltpred && updateMisPred) { // update altpred if used as pred
         XSDebug(true.B, p"update altprovider $altProvider, pred cycle ${updateMeta.pred_cycle.getOrElse(0.U)}\n")
 
-        updateMask(altProvider)      := true.B
-        updateUMask(altProvider)     := false.B
-        updateCorrect(altProvider)   := false.B
-        updateOldCtr(altProvider)    := updateMeta.altProviderCtr
-        updateAlloc(altProvider)     := false.B
-        updateTargetOffset(altProvider) := updateRealTargetOffset
+        updateMask(altProvider)            := true.B
+        updateUMask(altProvider)           := false.B
+        updateCorrect(altProvider)         := false.B
+        updateOldCtr(altProvider)          := updateMeta.altProviderCtr
+        updateAlloc(altProvider)           := false.B
+        updateTargetOffset(altProvider)    := updateRealTargetOffset
         updateOldTargetOffset(altProvider) := metaAltProviderTargetOffset
       }
 
@@ -649,10 +661,10 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
         updateMeta.providerU,
         updateMeta.providerTarget === updateRealTarget
       )
-      updateCorrect(provider)   := updateMeta.providerTarget === updateRealTarget
-      updateOldCtr(provider)    := updateMeta.providerCtr
-      updateAlloc(provider)     := false.B
-      updateTargetOffset(provider) := updateRealTargetOffset
+      updateCorrect(provider)         := updateMeta.providerTarget === updateRealTarget
+      updateOldCtr(provider)          := updateMeta.providerCtr
+      updateAlloc(provider)           := false.B
+      updateTargetOffset(provider)    := updateRealTargetOffset
       updateOldTargetOffset(provider) := metaProviderTargetOffset
     }
   }
@@ -666,11 +678,11 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
     tickCtr := satUpdate(tickCtr, TickWidth, !allocate.valid)
     when(allocate.valid) {
       XSDebug(true.B, p"allocate new table entry, pred cycle ${updateMeta.pred_cycle.getOrElse(0.U)}\n")
-      updateMask(allocate.bits)    := true.B
-      updateCorrect(allocate.bits) := true.B // useless for alloc
-      updateAlloc(allocate.bits)   := true.B
-      updateUMask(allocate.bits)   := true.B
-      updateU(allocate.bits)       := false.B
+      updateMask(allocate.bits)         := true.B
+      updateCorrect(allocate.bits)      := true.B // useless for alloc
+      updateAlloc(allocate.bits)        := true.B
+      updateUMask(allocate.bits)        := true.B
+      updateU(allocate.bits)            := false.B
       updateTargetOffset(allocate.bits) := updateRealTargetOffset
     }
   }
@@ -681,12 +693,12 @@ class ITTage(implicit p: Parameters) extends BaseITTage {
   }
 
   for (i <- 0 until ITTageNTables) {
-    tables(i).io.update.valid      := RegNext(updateMask(i), init = false.B)
-    tables(i).io.update.reset_u    := RegNext(updateResetU, init = false.B)
-    tables(i).io.update.correct    := RegEnable(updateCorrect(i), updateMask(i))
-    tables(i).io.update.alloc      := RegEnable(updateAlloc(i), updateMask(i))
-    tables(i).io.update.oldCtr     := RegEnable(updateOldCtr(i), updateMask(i))
-    tables(i).io.update.target_offset := RegEnable(updateTargetOffset(i), updateMask(i))
+    tables(i).io.update.valid             := RegNext(updateMask(i), init = false.B)
+    tables(i).io.update.reset_u           := RegNext(updateResetU, init = false.B)
+    tables(i).io.update.correct           := RegEnable(updateCorrect(i), updateMask(i))
+    tables(i).io.update.alloc             := RegEnable(updateAlloc(i), updateMask(i))
+    tables(i).io.update.oldCtr            := RegEnable(updateOldCtr(i), updateMask(i))
+    tables(i).io.update.target_offset     := RegEnable(updateTargetOffset(i), updateMask(i))
     tables(i).io.update.old_target_offset := RegEnable(updateOldTargetOffset(i), updateMask(i))
 
     tables(i).io.update.uValid := RegEnable(updateUMask(i), false.B, updateMask(i))
