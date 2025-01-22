@@ -66,8 +66,8 @@ trait HasMemBlockParameters extends HasXSParameter {
 
   val AtomicWBPort   = 0
   val MisalignWBPort = 1
-  val UncacheWBPort  = 2
-  val NCWBPorts = Seq(1, 2)
+  val UncacheWBPort  = 1
+  val NCWBPorts = Seq(0, 1)
 }
 
 abstract class MemBlockBundle(implicit val p: Parameters) extends Bundle with HasMemBlockParameters

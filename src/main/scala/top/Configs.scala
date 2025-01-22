@@ -30,7 +30,7 @@ import freechips.rocketchip.devices.debug._
 import openLLC.OpenLLCParam
 import freechips.rocketchip.diplomacy._
 import xiangshan.backend.dispatch.DispatchParameters
-import xiangshan.backend.regfile.{IntPregParams, VfPregParams}
+import xiangshan.backend.regfile.{IntPregParams, VfPregParams, FpPregParams, VlPregParams, V0PregParams}
 import xiangshan.cache.DCacheParameters
 import xiangshan.cache.mmu.{L2TLBParameters, TLBParameters}
 import device.EnableJtag
@@ -68,6 +68,7 @@ class MinimalConfig(n: Int = 1) extends Config(
   new BaseConfig(n).alter((site, here, up) => {
     case XSTileKey => up(XSTileKey).map(
       p => p.copy(
+        EnableClockGate = false,
         DecodeWidth = 6,
         RenameWidth = 6,
         RobCommitWidth = 8,
@@ -94,7 +95,7 @@ class MinimalConfig(n: Int = 1) extends Config(
         IBufNBank = 6,
         StoreBufferSize = 4,
         StoreBufferThreshold = 3,
-        IssueQueueSize = 10,
+        IssueQueueSize = 8,
         IssueQueueCompEntrySize = 4,
         dpParams = DispatchParameters(
           IntDqSize = 12,
@@ -110,8 +111,13 @@ class MinimalConfig(n: Int = 1) extends Config(
           numRead = None,
           numWrite = None,
         ),
+        fpPreg = FpPregParams(
+          numEntries = 64,
+          numRead = None,
+          numWrite = None,
+        ),
         vfPreg = VfPregParams(
-          numEntries = 160,
+          numEntries = 64,
           numRead = None,
           numWrite = None,
         ),

@@ -577,13 +577,13 @@ class LoadQueueReplay(implicit p: Parameters) extends XSModule
       io.replay(i) <> replay_req(i)
   }.otherwise {
     io.replay(0) <> replay_req(0)
-    io.replay(2).valid := false.B
-    io.replay(2).bits := DontCare
+    // io.replay(2).valid := false.B
+    // io.replay(2).bits := DontCare
 
-    val arbiter = Module(new RRArbiter(new LsPipelineBundle, 2))
-    arbiter.io.in(0) <> replay_req(1)
-    arbiter.io.in(1) <> replay_req(2)
-    io.replay(1) <> arbiter.io.out
+    // val arbiter = Module(new RRArbiter(new LsPipelineBundle, 2))
+    // arbiter.io.in(0) <> replay_req(1)
+    // arbiter.io.in(1) <> replay_req(2)
+    io.replay(1) <> replay_req(1)
   }
   // update cold counter
   val lastReplay = RegNext(VecInit(io.replay.map(_.fire)))
