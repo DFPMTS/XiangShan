@@ -13,6 +13,7 @@ import xiangshan.backend.fu.FuConfig.{AluCfg, BrhCfg}
 import xiangshan.backend.fu.vector.Bundles.{VType, Vxrm}
 import xiangshan.backend.fu.fpu.Bundles.Frm
 import xiangshan.backend.fu.wrapper.{CSRInput, CSRToDecode}
+import xiangshan.backend.issue.{VfScheduler}
 
 class ExuBlock(params: SchdBlockParams)(implicit p: Parameters) extends LazyModule with HasXSParameter {
   override def shouldBeInlined: Boolean = false
@@ -56,6 +57,20 @@ class ExuBlockImp(
   exus.find(_.io.csrio.nonEmpty).map(_.io.csrio.get).foreach { csrio =>
     exus.map(_.io.instrAddrTransType.foreach(_ := csrio.instrAddrTransType))
   }
+  params.schdType match {
+    case VfScheduler() => {
+      io.out.flatten.foreach(x => {
+        x.valid := false.B
+        x.bits := 0.U.asTypeOf(x.bits)
+      })
+      exus.foreach(exu => {
+        exu.io.in.valid := false.B
+        exu.io.in.bits := 0.U.asTypeOf(exu.io.in.bits)
+      })
+    }
+    case _ => Nil
+  }
+  
   val aluFireSeq = exus.filter(_.wrapper.exuParams.fuConfigs.contains(AluCfg)).map(_.io.in.fire)
   for (i <- 0 until (aluFireSeq.size + 1)){
     XSPerfAccumulate(s"alu_fire_${i}_cnt", PopCount(aluFireSeq) === i.U)

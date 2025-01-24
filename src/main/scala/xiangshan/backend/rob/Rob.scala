@@ -148,7 +148,7 @@ class RobImp(override val wrapper: Rob)(implicit p: Parameters, params: BackendP
 
   val rab = Module(new RenameBuffer(RabSize))
   val vtypeBuffer = Module(new VTypeBuffer(VTypeBufferSize))
-  val bankNum = 8
+  val bankNum = 2
   assert(RobSize % bankNum == 0, "RobSize % bankNum must be 0")
   val robEntries = RegInit(VecInit.fill(RobSize)((new RobEntryBundle).Lit(_.valid -> false.B)))
   // pointers
@@ -1113,8 +1113,8 @@ class RobImp(override val wrapper: Rob)(implicit p: Parameters, params: BackendP
       needUpdate(i).traceBlockInPipe.itype := Itype.Taken
     }
   }
-  robBanksRdataThisLineUpdate := VecInit(needUpdate.take(8))
-  robBanksRdataNextLineUpdate := VecInit(needUpdate.drop(8))
+  robBanksRdataThisLineUpdate := VecInit(needUpdate.take(CommitWidth))
+  robBanksRdataNextLineUpdate := VecInit(needUpdate.drop(CommitWidth))
   // end update robBanksRdata
 
   // interrupt_safe

@@ -218,4 +218,12 @@ class BypassNetwork()(implicit p: Parameters, params: BackendParams) extends XSM
     x.data := bypassRCDataVec(i)
     x.tag.foreach(_ := bypassTagVec(i))
   }
+
+  io.toExus.vf.map(x => x.map { 
+    y => 
+    {
+      y.valid := false.B
+      y.bits := 0.U.asTypeOf(y.bits)
+    }
+  })
 }

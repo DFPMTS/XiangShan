@@ -210,7 +210,7 @@ class BackendInlinedImp(override val wrapper: BackendInlined)(implicit p: Parame
   private val bypassNetwork = Module(new BypassNetwork)
   private val wbDataPath = Module(new WbDataPath(params))
   private val wbFuBusyTable = wrapper.wbFuBusyTable.module
-  private val vecExcpMod = Module(new VecExcpDataMergeModule)
+  // private val vecExcpMod = Module(new VecExcpDataMergeModule)
 
   private val iqWakeUpMappedBundle: Map[Int, ValidIO[IssueQueueIQWakeUpBundle]] = (
     intScheduler.io.toSchedulers.wakeupVec ++
@@ -311,7 +311,8 @@ class BackendInlinedImp(override val wrapper: BackendInlined)(implicit p: Parame
   ctrlBlock.io.debugEnqLsq.req := ctrlBlock.io.toMem.lsqEnqIO.req
   ctrlBlock.io.debugEnqLsq.needAlloc := ctrlBlock.io.toMem.lsqEnqIO.needAlloc
   ctrlBlock.io.debugEnqLsq.iqAccept := ctrlBlock.io.toMem.lsqEnqIO.iqAccept
-  ctrlBlock.io.fromVecExcpMod.busy := vecExcpMod.o.status.busy
+  // ctrlBlock.io.fromVecExcpMod.busy := vecExcpMod.o.status.busy
+  ctrlBlock.io.fromVecExcpMod.busy := false.B
 
   val intWriteBackDelayed = Wire(chiselTypeOf(wbDataPath.io.toIntPreg))
   intWriteBackDelayed.zip(wbDataPath.io.toIntPreg).map{ case (sink, source) =>
@@ -490,8 +491,10 @@ class BackendInlinedImp(override val wrapper: BackendInlined)(implicit p: Parame
   dataPath.io.diffV0Rat .foreach(_ := ctrlBlock.io.diff_v0_rat.get)
   dataPath.io.diffVlRat .foreach(_ := ctrlBlock.io.diff_vl_rat.get)
   dataPath.io.fromBypassNetwork := bypassNetwork.io.toDataPath
-  dataPath.io.fromVecExcpMod.r := vecExcpMod.o.toVPRF.r
-  dataPath.io.fromVecExcpMod.w := vecExcpMod.o.toVPRF.w
+  // dataPath.io.fromVecExcpMod.r := vecExcpMod.o.toVPRF.r
+  // dataPath.io.fromVecExcpMod.w := vecExcpMod.o.toVPRF.w
+  dataPath.io.fromVecExcpMod.r := 0.U.asTypeOf(dataPath.io.fromVecExcpMod.r)
+  dataPath.io.fromVecExcpMod.w := 0.U.asTypeOf(dataPath.io.fromVecExcpMod.w)
   dataPath.io.topDownInfo.lqEmpty := DelayN(io.topDownInfo.lqEmpty, 2)
   dataPath.io.topDownInfo.sqEmpty := DelayN(io.topDownInfo.sqEmpty, 2)
   dataPath.io.topDownInfo.l1Miss := RegNext(io.topDownInfo.l1Miss)
@@ -569,7 +572,8 @@ class BackendInlinedImp(override val wrapper: BackendInlined)(implicit p: Parame
   csrin.clintTime.bits := RegEnable(io.fromTop.clintTime.bits, io.fromTop.clintTime.valid)
   csrin.l2FlushDone := RegNext(io.fromTop.l2FlushDone)
   csrin.trapInstInfo := ctrlBlock.io.toCSR.trapInstInfo
-  csrin.fromVecExcpMod.busy := vecExcpMod.o.status.busy
+  // csrin.fromVecExcpMod.busy := vecExcpMod.o.status.busy
+  csrin.fromVecExcpMod.busy := false.B
   csrin.criticalErrorState := backendCriticalError
 
   private val csrio = intExuBlock.io.csrio.get
@@ -695,10 +699,10 @@ class BackendInlinedImp(override val wrapper: BackendInlined)(implicit p: Parame
   }
   wbDataPath.io.fromCSR.vstart := csrio.vpu.vstart
 
-  vecExcpMod.i.fromExceptionGen := ctrlBlock.io.toVecExcpMod.excpInfo
-  vecExcpMod.i.fromRab.logicPhyRegMap := ctrlBlock.io.toVecExcpMod.logicPhyRegMap
-  vecExcpMod.i.fromRat := ctrlBlock.io.toVecExcpMod.ratOldPest
-  vecExcpMod.i.fromVprf := dataPath.io.toVecExcpMod
+  // vecExcpMod.i.fromExceptionGen := ctrlBlock.io.toVecExcpMod.excpInfo
+  // vecExcpMod.i.fromRab.logicPhyRegMap := ctrlBlock.io.toVecExcpMod.logicPhyRegMap
+  // vecExcpMod.i.fromRat := ctrlBlock.io.toVecExcpMod.ratOldPest
+  // vecExcpMod.i.fromVprf := dataPath.io.toVecExcpMod
 
   // to mem
   private val memIssueParams = params.memSchdParams.get.issueBlockParams

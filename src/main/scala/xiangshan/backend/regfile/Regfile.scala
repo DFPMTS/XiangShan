@@ -280,9 +280,19 @@ object FpRegFile {
              bankNum      : Int,
              isVlRegfile  : Boolean = false,
            )(implicit p: Parameters): Unit = {
-    Regfile(
-      name, numEntries, raddr, rdata, wen, waddr, wdata,
-      hasZero = false, withReset, bankNum, debugReadAddr, debugReadData, isVlRegfile)
+    if(isVlRegfile) {
+      val rdataDummy = Wire(rdata.cloneType)
+      for (i <- 0 until rdata.length) {
+        rdata(i) := 0.U
+      }
+      Regfile(
+        name, numEntries, raddr, rdataDummy, Seq.fill(wen.length)(false.B), waddr, wdata,
+        hasZero = false, withReset, bankNum, debugReadAddr, debugReadData, isVlRegfile)
+    } else {
+      Regfile(
+        name, numEntries, raddr, rdata, wen, waddr, wdata,
+        hasZero = false, withReset, bankNum, debugReadAddr, debugReadData, isVlRegfile)
+    }
   }
 }
 
@@ -346,7 +356,7 @@ object VfRegFile {
     require(splitNum == wen.length, "splitNum should be equal to length of wen vec")
     if (splitNum == 1) {
       Regfile(
-        name, numEntries, raddr, rdata, wen.head, waddr, wdata,
+        name, numEntries, raddr, rdata, Seq.fill(wen.head.length)(false.B), waddr, wdata,
         hasZero = false, withReset, bankNum = 1, debugReadAddr, debugReadData)
     } else {
       val dataWidth = wdata.head.getWidth / splitNum
@@ -358,12 +368,13 @@ object VfRegFile {
       for (i <- 0 until splitNum) {
         wdataVec(i) := wdata.map(_ ((i + 1) * dataWidth - 1, i * dataWidth))
         Regfile(
-          name + s"Part${i}", numEntries, raddr, rdataVec(i), wen(i), waddr, wdataVec(i),
+          name + s"Part${i}", numEntries, raddr, rdataVec(i), Seq.fill(wen(i).length)(false.B), waddr, wdataVec(i),
           hasZero = false, withReset, bankNum = 1, debugReadAddr, debugRDataVec.map(_(i))
         )
       }
       for (i <- 0 until rdata.length) {
-        rdata(i) := Cat(rdataVec.map(_ (i)).reverse)
+        // rdata(i) := Cat(rdataVec.map(_ (i)).reverse)
+        rdata(i) := 0.U
       }
       if (debugReadData.nonEmpty) {
         for (i <- 0 until debugReadData.get.length) {

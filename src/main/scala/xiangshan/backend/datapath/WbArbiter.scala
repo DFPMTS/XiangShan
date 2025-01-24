@@ -356,7 +356,8 @@ class WbDataPath(params: BackendParams)(implicit p: Parameters) extends XSModule
   // only fired port can write back to ctrl block
   (intExuWBs zip intExuInputs).foreach { case (wb, input) => wb.valid := input.fire }
   (fpExuWBs zip fpExuInputs).foreach { case (wb, input) => wb.valid := input.fire }
-  (vfExuWBs zip vfExuInputs).foreach { case (wb, input) => wb.valid := input.fire }
+  // (vfExuWBs zip vfExuInputs).foreach { case (wb, input) => wb.valid := input.fire }
+  (vfExuWBs zip vfExuInputs).foreach { case (wb, input) => wb := 0.U.asTypeOf(wb) }
   (memExuWBs zip memExuInputs).foreach { case (wb, input) => wb.valid := input.fire }
 
   // io assign
@@ -370,9 +371,12 @@ class WbDataPath(params: BackendParams)(implicit p: Parameters) extends XSModule
 
   io.toIntPreg := toIntPreg
   io.toFpPreg := toFpPreg
-  io.toVfPreg := toVfPreg
-  io.toV0Preg := toV0Preg
-  io.toVlPreg := toVlPreg
+  // io.toVfPreg := toVfPreg
+  io.toVfPreg.map(x => (x := 0.U.asTypeOf(x)))
+  // io.toV0Preg := toV0Preg
+  io.toV0Preg.map(x => (x := 0.U.asTypeOf(x)))
+  // io.toVlPreg := toVlPreg
+  io.toVlPreg.map(x => (x := 0.U.asTypeOf(x)))
   io.toCtrlBlock.writeback.zip(wb2Ctrl).foreach { case (sink, source) =>
     sink.valid := source.valid
     sink.bits := source.bits
