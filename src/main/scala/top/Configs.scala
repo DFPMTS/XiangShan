@@ -220,6 +220,7 @@ class MinimalConfig(n: Int = 1) extends Config(
           name = "L2",
           ways = 8,
           sets = 128,
+          mshrs = 4,
           echoField = Seq(huancun.DirtyField()),
           prefetch = Nil,
           clientCaches = Seq(L1Param(
