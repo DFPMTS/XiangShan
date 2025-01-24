@@ -79,15 +79,15 @@ class MinimalConfig(n: Int = 1) extends Config(
         LoadQueueRARSize = 16,
         LoadQueueRAWSize = 12,
         LoadQueueReplaySize = 12,
-        LoadUncacheBufferSize = 8,
+        LoadUncacheBufferSize = 4,
         LoadQueueNWriteBanks = 4, // NOTE: make sure that LoadQueue{RAR, RAW, Replay}Size is divided by LoadQueueNWriteBanks.
         RollbackGroupSize = 8,
         StoreQueueSize = 12,
         StoreQueueNWriteBanks = 4, // NOTE: make sure that StoreQueueSize is divided by StoreQueueNWriteBanks
         StoreQueueForwardWithMask = true,
         // ============ VLSU ============
-        VlMergeBufferSize = 16,
-        VsMergeBufferSize = 8,
+        VlMergeBufferSize = 2,
+        VsMergeBufferSize = 2,
         UopWritebackWidth = 2,
         // ==============================
         RobSize = 32,
@@ -133,16 +133,16 @@ class MinimalConfig(n: Int = 1) extends Config(
         dcacheParametersOpt = Some(DCacheParameters(
           nSets = 64, // 32KB DCache
           nWays = 8,
-          tagECC = Some("secded"),
-          dataECC = Some("secded"),
+          // tagECC = Some("secded"),
+          // dataECC = Some("secded"),
           replacer = Some("setplru"),
-          nMissEntries = 4,
-          nProbeEntries = 4,
-          nReleaseEntries = 8,
+          nMissEntries = 2,
+          nProbeEntries = 2,
+          nReleaseEntries = 4,
           nMaxPrefetchEntry = 2,
-          enableTagEcc = true,
-          enableDataEcc = true,
-          cacheCtrlAddressOpt = Some(AddressSet(0x38022000, 0x7f))
+          // enableTagEcc = true,
+          // enableDataEcc = true,
+          // cacheCtrlAddressOpt = Some(AddressSet(0x38022000, 0x7f))
         )),
         // ============ BPU ===============
         EnableLoop = false,
