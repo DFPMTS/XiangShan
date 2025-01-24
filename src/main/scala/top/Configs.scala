@@ -235,7 +235,7 @@ class MinimalConfig(n: Int = 1) extends Config(
     case SoCParamsKey =>
       val tiles = site(XSTileKey)
       up(SoCParamsKey).copy(
-        L3CacheParamsOpt = Option.when(!up(EnableCHI))(up(SoCParamsKey).L3CacheParamsOpt.get.copy(
+        L3CacheParamsOpt = None /* Option.when(!up(EnableCHI))(up(SoCParamsKey).L3CacheParamsOpt.get.copy(
           sets = 1024,
           inclusive = false,
           clientCaches = tiles.map{ core =>
@@ -247,7 +247,7 @@ class MinimalConfig(n: Int = 1) extends Config(
           },
           simulation = !site(DebugOptionsKey).FPGAPlatform,
           prefetch = None
-        )),
+        )) */,
         OpenLLCParamsOpt = Option.when(up(EnableCHI))(OpenLLCParam(
           name = "LLC",
           ways = 8,

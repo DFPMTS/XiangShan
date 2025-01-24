@@ -27,15 +27,13 @@ if __name__ == "__main__":
 
     # List of filenames to edit (only filenames, not full paths)
     filenames_to_edit = [
-      "array_1_ext.v",
-      "array_9_ext.v",
-      "array_10_ext.v",
-      "array_13_ext.v",
-      "array_mcp2_0_ext.v",
-      "array_0_3_ext.v",
-      "array_17_ext.v",
-      "array_18_ext.v",
-      "array_19_ext.v",
+        "array_1_ext.v",
+        "array_6_ext.v",
+        "array_8_ext.v",
+        "array_9_ext.v",
+        "array_10_ext.v",
+        "array_13_ext.v",
+        "array_mcp2_0_ext.v",
     ]
 
     line_number = 14
