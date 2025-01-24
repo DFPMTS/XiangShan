@@ -150,7 +150,7 @@ case class XSCoreParameters
   CommitWidth: Int = 8,
   RobCommitWidth: Int = 8,
   RabCommitWidth: Int = 6,
-  MaxUopSize: Int = 65,
+  MaxUopSize: Int = 10,
   EnableRenameSnapshot: Boolean = true,
   RenameSnapshotNum: Int = 4,
   FtqSize: Int = 64,
