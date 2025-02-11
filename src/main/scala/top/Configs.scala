@@ -124,6 +124,8 @@ class MinimalConfig(n: Int = 1) extends Config(
           numRead = None,
           numWrite = None,
         ),
+        IntRegCacheSize = 4,
+        MemRegCacheSize = 4,
         icacheParameters = ICacheParameters(
           nSets = 64, // 16KB ICache
           tagECC = Some("parity"),
