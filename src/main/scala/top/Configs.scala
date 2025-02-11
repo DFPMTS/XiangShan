@@ -99,6 +99,7 @@ class MinimalConfig(n: Int = 1) extends Config(
         StoreBufferThreshold = 3,
         IssueQueueSize = 8,
         IssueQueueCompEntrySize = 4,
+        RenameSnapshotNum = 1,
         dpParams = DispatchParameters(
           IntDqSize = 12,
           FpDqSize = 12,
