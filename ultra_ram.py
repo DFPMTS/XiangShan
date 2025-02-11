@@ -33,6 +33,7 @@ if __name__ == "__main__":
         "array_9_ext.v",
         "array_10_ext.v",
         "array_13_ext.v",
+        "array_14_ext.v",
         "array_mcp2_0_ext.v",
     ]
 
