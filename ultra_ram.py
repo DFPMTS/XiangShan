@@ -41,3 +41,5 @@ if __name__ == "__main__":
     string_to_insert = '(* ram_style="ultra" *)'
 
     process_specific_files(directory, filenames_to_edit, line_number, string_to_insert)
+
+    process_specific_files(directory, ["array_0_1_ext.v"], line_number, '(* ram_style="block" *)')
