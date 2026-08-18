@@ -582,6 +582,9 @@ class StoreUnitS2(param: ExeUnitParams)(
     // Exception info and memory type to to Store Queue
     val toSqAddrRe = Output(new StoreAddrIO)
 
+    // Delayed head nuke: hold the S1 head PA/mask one extra cycle for Load S1
+    val staS2HeadNukeQueryReq = ValidIO(new StoreNukeQueryReq)
+
     // unalign head sent tlb info to unalign tail
     val unalignHeadTlbHit = Output(Bool())
 
@@ -684,6 +687,14 @@ class StoreUnitS2(param: ExeUnitParams)(
   io.dcacheKill := killDCache
   io.dcachePC := uop.pc
   io.dcacheResp.ready := true.B
+
+  // Delayed head fragment for Load S1. Valid (not fire) so S2 stall still holds the PA.
+  val s2HeadNukeValid = pipeIn.valid && !kill && tlbHit && isUnalignHead && !isHwPrefetch
+  io.staS2HeadNukeQueryReq.valid := s2HeadNukeValid
+  io.staS2HeadNukeQueryReq.bits.robIdx := robIdx
+  io.staS2HeadNukeQueryReq.bits.paddr := in.paddr.get
+  io.staS2HeadNukeQueryReq.bits.mask := in.mask
+  io.staS2HeadNukeQueryReq.bits.matchType := Mux(isCbo, StLdNukeMatchType.CacheLine, StLdNukeMatchType.Normal)
 
   io.toSqAddrRe.memBackTypeMM := memBackTypeMM
   io.toSqAddrRe.mmio := isMMIO
@@ -916,6 +927,8 @@ class StoreUnitIO(val param: ExeUnitParams)(implicit p: Parameters) extends XSBu
   val toUnalignQueue = DecoupledIO(new UnalignQueueIO)
   // Nuke check req to LoadUnit
   val staNukeQueryReq = ValidIO(new StoreNukeQueryReq)
+  // Delayed cross-16B head nuke to Load S1
+  val staS2HeadNukeQueryReq = ValidIO(new StoreNukeQueryReq)
   // Prefetch Train
   val prefetchTrainHintS1 = Output(Bool())
   val prefetchTrainHintS2 = Output(Bool())
@@ -967,6 +980,7 @@ class NewStoreUnit(val param: ExeUnitParams)(implicit p: Parameters) extends XSM
   io.dcache.s1_kill := s1.io.dcacheKill
   io.updateLFST := s1.io.updateLFST
   io.staNukeQueryReq := s1.io.staNukeQueryReq
+  io.staS2HeadNukeQueryReq := s2.io.staS2HeadNukeQueryReq
   io.toSqAddr := s1.io.toSqAddr
   io.debugInfo := s1.io.debugInfo
   io.prefetchTrainHintS1 := s1.io.prefetchTrainHint
